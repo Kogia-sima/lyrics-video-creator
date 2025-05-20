@@ -127,6 +127,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 Kogia sima - [@puchikujira9402](https://x.com/puchikujira9402)
 
-Project Link: [https://github.com/Kogia_sima/lyrics_video_creator](https://github.com/Kogia_sima/lyrics_video_creator)
+Project Link: [https://github.com/Kogia-sima/lyrics-video-creator](https://github.com/Kogia-sima/lyrics-video-creator)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
