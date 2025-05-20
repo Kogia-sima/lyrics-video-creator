@@ -1,0 +1,13 @@
+[project]
+name = "lyrics-video-creator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=0.3.59",
+    "langchain-openai>=0.3.16",
+    "moviepy>=2.1.2",
+    "musicai-sdk>=0.4.1",
+    "python-dotenv>=1.1.0",
+]
