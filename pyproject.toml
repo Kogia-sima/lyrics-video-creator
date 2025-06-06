@@ -5,9 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "fastapi>=0.115.12",
     "langchain-core>=0.3.59",
     "langchain-openai>=0.3.16",
     "moviepy>=2.1.2",
     "musicai-sdk>=0.4.1",
     "python-dotenv>=1.1.0",
+    "uvicorn>=0.34.3",
 ]
