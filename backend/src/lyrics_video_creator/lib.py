@@ -313,7 +313,7 @@ def create_lyric_video(
     margin_bottom: int = 50,
     fps: int = 24,
     threads: int = 4,
-):
+) -> None:
     """
     Create a lyric video with subtitles from an image, lyric data, and music.
 

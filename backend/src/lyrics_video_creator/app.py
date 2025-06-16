@@ -7,6 +7,8 @@ import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse
 
+from lyrics_video_creator.lib import create_lyric_video
+
 # FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
     title="FastAPIサンプルアプリケーション",
@@ -17,21 +19,26 @@ app = FastAPI(
 
 @app.post("/create_video")
 async def create_video(
-    audio_file: UploadFile = File(...),
-    image_file: UploadFile = File(...),
-    lyrics: str = Form(...),
-    speed: str = Form(...),
-    font_size: str = Form(...),
-    bg_color: str = Form(...),
+    music_file: UploadFile = File(),
+    image_file: UploadFile = File(),
+    lyrics: str = Form(),
+    font_name_ja: str = Form(default="Noto Sans JP"),
+    font_name_en: str = Form(default="Arial"),
+    font_color: str = Form(default="#FFFFFF"),
+    outline_color: str = Form(default="#000000"),
+    font_size: int = Form(default=32),
+    outline_size: int = Form(default=0),
+    bottom_margin: int = Form(default=50),
+    enable_fade: bool = Form(default=False),
 ):
     # Create uploads directory if not exists
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True)
 
     # Save audio file
-    audio_filename = os.path.join(upload_dir, f"{uuid.uuid4()}_{audio_file.filename}")
-    with open(audio_filename, "wb") as f:
-        f.write(await audio_file.read())
+    music_filename = os.path.join(upload_dir, f"{uuid.uuid4()}_{music_file.filename}")
+    with open(music_filename, "wb") as f:
+        f.write(await music_file.read())
 
     # Save image file
     image_filename = os.path.join(upload_dir, f"{uuid.uuid4()}_{image_file.filename}")
@@ -43,19 +50,24 @@ async def create_video(
     with open(lyrics_filename, "w", encoding="utf-8") as f:
         f.write(lyrics)
 
-    # Create settings dictionary from individual parameters
-    settings_data = {"speed": speed, "font_size": font_size, "bg_color": bg_color}
-
     # Create a dummy video file (simulate combining audio and image)
     video_filename = os.path.join(upload_dir, f"{uuid.uuid4()}_video.mp4")
-    with open(video_filename, "wb") as f:
-        # ...simulate video creation by writing dummy content...
-        f.write(
-            b"Dummy video content combining: "
-            + f"Audio: {audio_filename}, Image: {image_filename}, Lyrics: {lyrics}, Settings: {settings_data}".encode(
-                "utf-8"
-            )
-        )
+
+    # Call the create_lyric_video function to generate the video
+    create_lyric_video(
+        music_file=music_filename,
+        image_file=image_filename,
+        lyrics_file=lyrics_filename,
+        output_file=video_filename,
+        font_name_ja=font_name_ja,
+        font_name_en=font_name_en,
+        font_color=font_color,
+        stroke_color=outline_color,
+        font_size=font_size,
+        stroke_width=outline_size,
+        margin_bottom=bottom_margin,
+        # enable_fade=enable_fade,
+    )
 
     # Return video file as response
     return FileResponse(
