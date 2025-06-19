@@ -15,6 +15,9 @@ dependencies = [
     "uvicorn>=0.34.3",
 ]
 
+[project.scripts]
+main = "lyrics_video_creator.app:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

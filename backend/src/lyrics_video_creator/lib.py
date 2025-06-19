@@ -1,4 +1,6 @@
+import copy
 import json
+import logging  # ...new import...
 import os
 import uuid
 from pathlib import Path
@@ -11,6 +13,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from moviepy import AudioFileClip, CompositeVideoClip, ImageClip, TextClip, vfx
 from musicai_sdk import MusicAiClient
+
+from lyrics_video_creator.font import get_font_path
+
+logger = logging.getLogger(__name__)
 
 
 class MusicAiJobRunner:
@@ -33,7 +39,7 @@ class MusicAiJobRunner:
         Uploads a file to the MusicAI API.
         """
         file_url = self.client.upload_file(file_path)
-        print("File Uploaded:", file_url)
+        logger.info("File Uploaded: %s", file_url)
         return file_url
 
     def run_job(self, workflow_slug: str, workflow_params: dict[str, Any]) -> dict:
@@ -47,15 +53,14 @@ class MusicAiJobRunner:
             params=workflow_params,
         )
         job_id = create_job_info["id"]
-        print("Job Created:", job_id)
+        logger.info("Job Created: %s", job_id)
 
         # Wait for the job to complete
         job_info = self.client.wait_for_job_completion(job_id)
 
         # Get job info
         job_info = self.client.get_job(job_id=job_id)
-        print("Job Result:", job_info["result"])
-
+        logger.info("Job Result: %s", job_info["result"])
         return job_info["result"]
 
 
@@ -72,12 +77,20 @@ def align_lyrics(workflow_slug: str, music_file: Path, lyrics: str) -> list[dict
     """
     Aligns lyrics to music using the MusicAI API.
     """
+    # test
+    lyrics_json = convert_lyrics_to_json(lyrics)
+    for i, lyric in enumerate(lyrics_json):
+        lyric["start"] = i * 4
+        lyric["end"] = i * 4 + 1
+
+    return lyrics_json
+
     # Initialize the MusicAI client
     musicai = MusicAiJobRunner(api_key=os.environ["MUSICAI_API_KEY"])
 
     # Get application info
     app_info = musicai.get_application_info()
-    print("MusicAI Application Info:", app_info)
+    logger.info("MusicAI Application Info: %s", app_info)
 
     with NamedTemporaryFile(suffix=".json") as temp_lyrics_file:
         # convert the lyrics to json
@@ -123,7 +136,7 @@ def correct_lyrics_timing(
     return aligned_lyrics
 
 
-def translate_lyrics(input_file_path: str, output_file_path: str | None):
+def translate_lyrics(lyrics: list[dict]) -> list[dict]:
     """
     Reads a Japanese lyrics JSON file, translates it into English, and saves it to a new JSON file.
 
@@ -131,52 +144,34 @@ def translate_lyrics(input_file_path: str, output_file_path: str | None):
         input_file_path (str): Path to the input JSON file.
         output_file_path (str): Path to the output JSON file.
     """
-    # 1. Check OpenAI API key
+    # Check OpenAI API key
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key is None:
-        print("Error: Environment variable OPENAI_API_KEY is not set.")
-        print("Please set OPENAI_API_KEY before running the script.")
-        print("Example: export OPENAI_API_KEY='your_api_key_here'")
-        return
-
-    # 2. Read input file
-    try:
-        with open(input_file_path, "r", encoding="utf-8") as f:
-            lyrics_data = json.load(f)
-    except FileNotFoundError:
-        print(f"Error: Input file '{input_file_path}' not found.")
-        return
-    except json.JSONDecodeError:
-        print(f"Error: Input file '{input_file_path}' is not a valid JSON format.")
-        return
-    except Exception as e:
-        print(
-            f"An unexpected error occurred while reading input file '{input_file_path}': {e}"
+        raise RuntimeError(
+            "Error: Environment variable OPENAI_API_KEY is not set. "
+            "Please set OPENAI_API_KEY before running the script."
+            "Example: export OPENAI_API_KEY='your_api_key_here'"
         )
-        return
 
     # Check input data format
-    if not isinstance(lyrics_data, list):
-        print(f"Error: The content of input file '{input_file_path}' must be a list.")
+    if not isinstance(lyrics, list):
+        logger.error(
+            "Error: The content of input file '%s' must be a list.", input_file_path
+        )
         return
     if not all(
         isinstance(item, dict) and "text" in item and "start" in item and "end" in item
-        for item in lyrics_data
+        for item in lyrics
     ):
-        print(
-            f"Error: Each element in the input file must be a dictionary with 'text', 'start', and 'end' keys."
+        raise RuntimeError(
+            "Error: Each element in the input file must be a dictionary with 'text', 'start', and 'end' keys."
         )
-        return
 
-    # If output file path is not specified, save in the same directory as the input file
-    if output_file_path is None:
-        output_file_path = os.path.splitext(input_file_path)[0] + "_translated.json"
-
-    japanese_texts = [item["text"] for item in lyrics_data]
+    japanese_texts = [item["text"] for item in lyrics]
     num_original_lines = len(japanese_texts)
     japanese_lyrics_block = "\n".join(japanese_texts)
 
-    # 3. Create prompt
+    # Create prompt
     # Hint: Include the entire lyrics in the prompt and specify the output format in the prompt
     #       to make it easier to extract the English lyrics accurately.
     prompt_template_str = """\
@@ -216,11 +211,13 @@ def translate_lyrics(input_file_path: str, output_file_path: str | None):
     temperature_step = 0.2
     translated_lines_list: list[str] = []
 
-    print(f"Starting translation. Number of input lines: {num_original_lines}")
+    logger.info("Starting translation. Number of input lines: %d", len(japanese_texts))
 
-    # 4. Translation using ChatOpenAI (including retry logic)
+    # Translation using ChatOpenAI (including retry logic)
     while current_temperature <= max_temperature:
-        print(f"  Trying translation with temperature {current_temperature:.1f}...")
+        logger.debug(
+            "  Trying translation with temperature %.1f...", current_temperature
+        )
 
         # Initialize ChatOpenAI
         # Condition: Set temperature parameter of ChatOpenAI to 0 and seed to 42.
@@ -257,20 +254,19 @@ def translate_lyrics(input_file_path: str, output_file_path: str | None):
             break
 
         # If the number of lines does not match, increase temperature and retry
-        print(
-            f"  The number of lines in the translation result with temperature {current_temperature:.1f} did not match."
+        logger.debug(
+            "  The number of translation lines (%.1f) did not match. Expected: %d, Actual: %d",
+            current_temperature,
+            num_original_lines,
+            len(potential_translations),
         )
-        print(
-            f"    Expected lines: {num_original_lines}, Actual lines: {len(potential_translations)}"
-        )
-
         current_temperature += temperature_step
         # Small value for floating point comparison
         if (
             current_temperature > max_temperature + 1e-9
             and translated_lines_list is None
         ):
-            print(f"  Reached maximum temperature ({max_temperature:.1f}).")
+            logger.info("  Reached maximum temperature (%.1f).", max_temperature)
             break
 
     if not translated_lines_list:
@@ -278,62 +274,66 @@ def translate_lyrics(input_file_path: str, output_file_path: str | None):
             "Warning: Translation failed for all temperature settings or the result was not in the expected format."
         )
 
-    # 5. Create output data
-    for i, item in enumerate(lyrics_data):
+    # Create output data
+    lyrics = copy.copy(lyrics)
+    for i, item in enumerate(lyrics):
         # Condition: For each dictionary, add a new key "translations",
         #            and create a nested key "en" inside it
         if "translations" not in item:
             item["translations"] = {}
         item["translations"]["en"] = translated_lines_list[i]
-    print("Incorporated translation results into output data.")
+    logger.info("Incorporated translation results into output data.")
 
-    # 6. Save output file
-    # Condition: Save the output result in JSON format to a path different from the input file
-    try:
-        with open(output_file_path, "w", encoding="utf-8") as f:
-            json.dump(lyrics_data, f, ensure_ascii=False, indent=4)
-        print(f"Saved translation result to '{output_file_path}'.")
-    except Exception as e:
-        print(
-            f"An error occurred while saving to output file '{output_file_path}': {e}"
-        )
+    return lyrics
 
 
 def create_lyric_video(
     music_file: str,
-    lyrics_file: str,
     image_file: str,
+    lyrics: list[dict],
     output_file: str = "output.mp4",
-    font_name_ja: str = "SourceHanSansJP-Regular",
-    font_name_en: str = "C:/Windows/Fonts/msmincho.ttc",
+    font_name_ja: str = "MS Gothic",
+    font_name_en: str = "MS Gothic",
     font_size: int = 48,
     font_color: str = "white",
     stroke_color: str = "black",
     stroke_width: int = 2,
     margin_bottom: int = 50,
     fps: int = 24,
+    enable_fade: bool = True,
     threads: int = 4,
 ) -> None:
     """
-    Create a lyric video with subtitles from an image, lyric data, and music.
+    Creates a lyric video with subtitles from the provided music, lyrics, and background image.
 
     Args:
         music_file (str): Path to the music file.
-        lyrics_file (str): Path to the lyric data (JSON) file.
+        lyrics_file (str): Path to the lyrics JSON file.
         image_file (str): Path to the background image file.
-        output_file (str, optional): Path to the output video file. Default is "output.mp4".
-        font_name (str, optional): Font name or font file path for subtitles.
-                                    Default is "SourceHanSansJP-Regular".
-        font_size (int, optional): Font size for subtitles. Default is 48.
-        font_color (str, optional): Font color for subtitles. Default is "white".
-        stroke_color (str, optional): Stroke color for subtitles. Default is "black".
-        stroke_width (int, optional): Stroke width for subtitles. Default is 2.
-        margin_bottom (int, optional): Bottom margin for subtitles. Default is 50.
-        fps (int, optional): Frame rate for output video. Default is 24.
-        threads (int, optional): Number of threads for encoding. Default is 4.
+        output_file (str): Path to save the output video file (default is "output.mp4").
+        font_name_ja (str): Font name for Japanese text (default is "SourceHanSansJP-Regular").
+        font_name_en (str): Font name for English text (default is "C:/Windows/Fonts/msmincho.ttc").
+        font_size (int): Font size for subtitles (default is 48).
+        font_color (str): Color of the font for subtitles (default is "white").
+        stroke_color (str): Color of the stroke for subtitles (default is "black").
+        stroke_width (int): Width of the stroke for subtitles (default is 2).
+        margin_bottom (int): Bottom margin for subtitles (default is 50).
+        fps (int): Frames per second for the output video (default is 24).
+        enable_fade (bool): Whether to enable fade-in and fade-out effects for subtitles (default is True).
+        threads (int): Number of threads to use for video processing (default is 4).
     """
-    print("--- Start generating video ---")
-    print(f"Settings: Font={font_name_ja}, Size={font_size}, Margin={margin_bottom}")
+    logger.info("--- Start generating video ---")
+    logger.debug(
+        "Settings: Font=%s, Size=%d, Margin=%d", font_name_ja, font_size, margin_bottom
+    )
+
+    font_path_ja = get_font_path(font_name_ja)
+    if font_path_ja is None:
+        raise RuntimeError(f"Font '{font_name_ja}' not found.")
+
+    font_path_en = get_font_path(font_name_en)
+    if font_path_en is None:
+        raise RuntimeError(f"Font '{font_name_en}' not found.")
 
     audio_clip = None
     background_clip = None
@@ -342,31 +342,28 @@ def create_lyric_video(
 
     try:
         # --- Load Input Files ---
-        print(f"Loading music file: {music_file}")
+        logger.info("Loading music file: %s", music_file)
         audio_clip = AudioFileClip(music_file)
         video_duration = audio_clip.duration
-        print(f"Music file duration: {video_duration:.2f} seconds")
+        logger.debug("Music file duration: %.2f seconds", video_duration)
 
-        print(f"Loading background image: {image_file}")
+        logger.info("Loading background image: %s", image_file)
         background_clip = ImageClip(image_file).with_duration(video_duration)
         video_width, video_height = background_clip.size
-        print(f"Video size: {video_width}x{video_height}")
-
-        print(f"Loading lyric data: {lyrics_file}")
-        with open(lyrics_file, "r", encoding="utf-8") as f:
-            lyrics_data = json.load(f)
-        print(f"Loaded {len(lyrics_data)} lyric data entries.")
+        logger.debug("Video size: %dx%d", video_width, video_height)
 
         # --- Generate Subtitle Clips ---
-        print("Generating subtitle clips...")
-        for i, lyric in enumerate(lyrics_data):
+        logger.info("Generating subtitle clips...")
+        for i, lyric in enumerate(lyrics):
             start_time = lyric.get("start")
             end_time = lyric.get("end")
             text = lyric.get("text", "").strip()
 
             # Data validation
             if start_time is None or end_time is None or not text:
-                print(f"Warning: Skipping invalid lyric data (line {i+1}): {lyric}")
+                logger.warning(
+                    "Skipping invalid lyric data (line %d): %s", i + 1, lyric
+                )
                 continue
             if (
                 not isinstance(start_time, (int, float))
@@ -374,8 +371,11 @@ def create_lyric_video(
                 or start_time < 0
                 or end_time <= start_time
             ):
-                print(
-                    f"Warning: Skipping lyric data with invalid time (line {i+1}): start={start_time}, end={end_time}"
+                logger.warning(
+                    "Skipping lyric data with invalid time (line %d): start=%s, end=%s",
+                    i + 1,
+                    start_time,
+                    end_time,
                 )
                 continue
 
@@ -388,7 +388,7 @@ def create_lyric_video(
                     text=text,
                     font_size=font_size,
                     color=font_color,
-                    font=font_name_ja,
+                    font=font_path_ja,
                     stroke_color=stroke_color,
                     stroke_width=stroke_width,
                     method="caption",
@@ -402,8 +402,11 @@ def create_lyric_video(
                     )
                     .with_start(start_time)
                     .with_duration(duration)
-                    .with_effects([vfx.FadeIn(0.5), vfx.FadeOut(0.5)])
                 )
+                if enable_fade:
+                    txt_clip = txt_clip.with_effects(
+                        [vfx.FadeIn(0.5), vfx.FadeOut(0.5)]
+                    )
 
                 subtitle_clips.append(txt_clip)
 
@@ -411,7 +414,7 @@ def create_lyric_video(
                     text=lyric["translations"]["en"],
                     font_size=font_size // 2,
                     color=font_color,
-                    font=font_name_en,
+                    font=font_path_en,
                     stroke_color=stroke_color,
                     stroke_width=stroke_width,
                     method="caption",
@@ -425,39 +428,48 @@ def create_lyric_video(
                     )
                     .with_start(start_time)
                     .with_duration(duration)
-                    .with_effects([vfx.FadeIn(0.5), vfx.FadeOut(0.5)])
                 )
+                if enable_fade:
+                    txt_clip = txt_clip.with_effects(
+                        [vfx.FadeIn(0.5), vfx.FadeOut(0.5)]
+                    )
+
                 subtitle_clips.append(txt_clip)
 
             except Exception as e:
-                print(f"Error: Failed to create text clip (line {i+1}): '{text}' - {e}")
-                print(
-                    f"Please check if the '{font_name_ja}' font is installed on your system or if the path is correct."
+                logger.error(
+                    "Error: Failed to create text clip (line %d): '%s' - %s",
+                    i + 1,
+                    text,
+                    e,
+                )
+                logger.error(
+                    "Please check if the '%s' font is installed on your system or if the path is correct.",
+                    font_name_ja,
                 )
                 raise  # Re-raise the error to abort processing
 
-        print(f"Generated {len(subtitle_clips)} subtitle clips.")
+        logger.info("Generated %d subtitle clips.", len(subtitle_clips))
 
         # --- Combine Clips ---
-        print("Combining video and subtitle clips...")
+        logger.info("Combining video and subtitle clips...")
         final_clips = [background_clip] + subtitle_clips
         video = CompositeVideoClip(final_clips, size=(video_width, video_height))
         assert video is not None
 
         # --- Set Audio ---
-        print("Setting audio to video...")
+        logger.info("Setting audio to video...")
         video = video.with_audio(audio_clip)
         assert video is not None
 
-        print("Video preview")
+        # logger.info("Video preview")
         # video.show(34.0)
         # video = video.subclipped(0, 10)
         # video.preview(3, audio=False)
         # return
 
         # --- Write Output Video File ---
-        print(f"Writing video file '{output_file}'...")
-        print("This may take some time...")
+        logger.info("Writing video file '%s'...", output_file)
         video.write_videofile(
             output_file,
             codec="libx264",
@@ -467,18 +479,18 @@ def create_lyric_video(
             logger="bar",
             preset="ultrafast",
         )
-        print(f"\nVideo file created successfully: {output_file}")
+        logger.info("Video file created successfully: %s", output_file)
 
     except FileNotFoundError as e:
-        print(f"Error: Input file not found - {e}")
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON format in lyric file ({lyrics_file}) - {e}")
+        logger.error("Error: Input file not found - %s", e)
     except Exception as e:
-        print(f"Error: Unexpected problem occurred during video generation - {e}")
-        raise e  # Re-raise the error to abort processing
+        logger.error(
+            "Error: Unexpected problem occurred during video generation - %s", e
+        )
+        raise e
     finally:
+        logger.info("Releasing resources...")
         # --- Clean up resources ---
-        print("Releasing resources...")
         try:
             if audio_clip:
                 audio_clip.close()
@@ -489,8 +501,8 @@ def create_lyric_video(
                     clip.close()
             if video:
                 video.close()
-            print("Cleanup complete.")
+            logger.info("Cleanup complete.")
         except Exception as e:
-            print(f"Warning: Error occurred during resource cleanup - {e}")
+            logger.warning(f"Warning: Error occurred during resource cleanup - {e}")
 
-    print("--- Video generation finished ---")
+    logger.info("--- Video generation finished ---")
