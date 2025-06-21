@@ -60,12 +60,8 @@ Before you use this project, you'll need the following requirements.
    ```sh
    git clone https://github.com/Kogia_sima/lyrics_video_creator.git
    ```
-2. Install dependencies
-   ```sh
-   uv sync
-   ```
-3. Copy the `.env.template` file and save as `.env`.
-4. Enter your API in `.env`
+2. Copy the `.env.template` file and save as `.env`.
+3. Enter your API in `.env`
    ```js
    MUSICAI_API_KEY=<Your Music API Key>
    OPENAI_API_KEY=<OpenAI API Key>
@@ -78,21 +74,21 @@ Before you use this project, you'll need the following requirements.
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-1. Prepare your music file (mp3) and lyrics file (txt)
-2. Align the timings of lyrics
-   ```sh
-   uv run 02_align_lyrics.py /your/music.mp3 /your/lyrics.txt
-   ```
-3. Translate the lyrics
-   ```sh
-   uv run 03_translate_lyrics.py /your/lyrics_aligned.json
-   ```
-4. Generate a lyrics video
-   ```sh
-   uv run 04_generate_movie.py /your/music.mp3 /your/lyrics_aligned_translated.json /your/background.jpg
-   ```
+1. Launch the backend server using the following prompt
 
-You can find detailed usage information in the --help option's documentation.
+```
+$ cd backend
+$ uv run main
+```
+
+2. Launch the frontend server using the following prompt
+
+```
+$ cd frontend
+$ npm run dev
+```
+
+3. Launch the browser and navigate to `http://localhost:5173`
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

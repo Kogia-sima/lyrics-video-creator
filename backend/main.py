@@ -7,9 +7,15 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from lyrics_video_creator.lib import align_lyrics, create_lyric_video, translate_lyrics
+from lyrics_video_creator.lib import (
+    align_lyrics,
+    correct_lyrics_timing,
+    create_lyric_video,
+    translate_lyrics,
+)
 
 # ログ設定を辞書形式で定義
 LOGGING_CONFIG = {
@@ -61,6 +67,22 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# ここからCORS設定
+origins = [
+    "http://localhost:5173",  # Next.jsアプリケーションのオリジン
+    # 必要に応じて他のオリジンも追加できます
+    # 例: "http://localhost:3000" (Create React Appの場合など)
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 許可するオリジンのリスト
+    allow_credentials=True,  # Cookieなどの認証情報を含むリクエストを許可するか
+    allow_methods=["*"],  # すべてのHTTPメソッドを許可 (GET, POST, PUT, DELETEなど)
+    allow_headers=["*"],  # すべてのHTTPヘッダーを許可
+)
+# ここまでCORS設定
+
 
 @app.post("/create_video")
 async def create_video(
@@ -70,8 +92,8 @@ async def create_video(
     font_name_ja: str = Form(default="Noto Sans JP"),
     font_name_en: str = Form(default="Arial"),
     font_color: str = Form(default="#FFFFFF"),
-    outline_color: str = Form(default="#000000"),
     font_size: int = Form(default=32),
+    outline_color: str = Form(default="#000000"),
     outline_size: int = Form(default=0),
     bottom_margin: int = Form(default=50),
     enable_fade: bool = Form(default=False),
@@ -127,6 +149,9 @@ async def create_video(
             music_file=Path(music_filename),
             lyrics=lyrics,
         )
+        aligned_lyrics = correct_lyrics_timing(
+            original_lyrics=lyrics, aligned_lyrics=aligned_lyrics
+        )
 
         # 歌詞の翻訳
         logger.info(f"[Request ID: {request_id}] 歌詞を翻訳しています...")
@@ -146,7 +171,7 @@ async def create_video(
             font_size=font_size,
             stroke_width=outline_size,
             margin_bottom=bottom_margin,
-            # enable_fade=enable_fade,
+            enable_fade=enable_fade,
         )
         logger.info(
             f"[Request ID: {request_id}] 歌詞動画の生成が完了しました: {video_filename}"

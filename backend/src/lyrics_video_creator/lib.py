@@ -2,10 +2,12 @@ import copy
 import json
 import logging  # ...new import...
 import os
+import tempfile
 import uuid
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any
+
+import requests
 
 # Import LangChain and OpenAI related libraries
 from langchain_core.output_parsers import StrOutputParser
@@ -60,6 +62,7 @@ class MusicAiJobRunner:
 
         # Get job info
         job_info = self.client.get_job(job_id=job_id)
+
         logger.info("Job Result: %s", job_info["result"])
         return job_info["result"]
 
@@ -77,13 +80,13 @@ def align_lyrics(workflow_slug: str, music_file: Path, lyrics: str) -> list[dict
     """
     Aligns lyrics to music using the MusicAI API.
     """
-    # test
-    lyrics_json = convert_lyrics_to_json(lyrics)
-    for i, lyric in enumerate(lyrics_json):
-        lyric["start"] = i * 4
-        lyric["end"] = i * 4 + 1
+    # # test
+    # lyrics_json = convert_lyrics_to_json(lyrics)
+    # for i, lyric in enumerate(lyrics_json):
+    #     lyric["start"] = i * 4
+    #     lyric["end"] = i * 4 + 1
 
-    return lyrics_json
+    # return lyrics_json
 
     # Initialize the MusicAI client
     musicai = MusicAiJobRunner(api_key=os.environ["MUSICAI_API_KEY"])
@@ -92,17 +95,23 @@ def align_lyrics(workflow_slug: str, music_file: Path, lyrics: str) -> list[dict
     app_info = musicai.get_application_info()
     logger.info("MusicAI Application Info: %s", app_info)
 
-    with NamedTemporaryFile(suffix=".json") as temp_lyrics_file:
-        # convert the lyrics to json
-        lyrics_json = convert_lyrics_to_json(lyrics)
-        temp_lyrics_file.write(
-            json.dumps(lyrics_json, ensure_ascii=False).encode("utf-8")
-        )
-        temp_lyrics_file.flush()
+    # with NamedTemporaryFile(mode="w+", suffix=".json") as temp_lyrics_file:
+    #     # convert the lyrics to json
+    #     lyrics_json = convert_lyrics_to_json(lyrics)
+    #     temp_lyrics_file.write(
+    #         json.dumps(lyrics_json, ensure_ascii=False)
+    #     )
+    #     temp_lyrics_file.flush()
 
-        # Upload the files
-        music_url = musicai.upload_file(music_file)
-        lyrics_url = musicai.upload_file(temp_lyrics_file.name)
+    lyrics_json = convert_lyrics_to_json(lyrics)
+    temp_lyrics_file = Path(tempfile.mkstemp(suffix=".json", text=True)[1])
+    temp_lyrics_file.write_text(
+        json.dumps(lyrics_json, ensure_ascii=False), encoding="utf-8"
+    )
+
+    # Upload the files
+    music_url = musicai.upload_file(music_file)
+    lyrics_url = musicai.upload_file(str(temp_lyrics_file))
 
     # Define workflow parameters
     workflow_params = {
@@ -112,8 +121,13 @@ def align_lyrics(workflow_slug: str, music_file: Path, lyrics: str) -> list[dict
 
     # Create a job for the workflow
     job_result = musicai.run_job(workflow_slug, workflow_params)
+    logger.info("Job Result: %s", job_result)
 
-    aligned_lyrics = json.loads(job_result["aligned_lyrics"])
+    # fetch result from the job
+    url = job_result["transcription + syllable alignment"]
+    response = requests.get(url)
+    aligned_lyrics = json.loads(response.text)
+
     return aligned_lyrics
 
 
@@ -125,6 +139,7 @@ def correct_lyrics_timing(
     """
     # Format the original lyrics as JSON
     original_lyrics_json = convert_lyrics_to_json(original_lyrics)
+    aligned_lyrics = copy.copy(aligned_lyrics)
 
     for i in range(len(aligned_lyrics) - 1):
         # Replace the text in the aligned lyrics with the original lyrics
@@ -335,6 +350,9 @@ def create_lyric_video(
     if font_path_en is None:
         raise RuntimeError(f"Font '{font_name_en}' not found.")
 
+    logger.info("font_path_ja: %s", font_path_ja.as_posix())
+    logger.info("font_path_en: %s", font_path_en.as_posix())
+
     audio_clip = None
     background_clip = None
     subtitle_clips = []
@@ -388,17 +406,20 @@ def create_lyric_video(
                     text=text,
                     font_size=font_size,
                     color=font_color,
-                    font=font_path_ja,
+                    font=font_path_ja.as_posix(),
                     stroke_color=stroke_color,
                     stroke_width=stroke_width,
-                    method="caption",
+                    method="label",
                     text_align="center",
-                    size=(int(video_width * 0.9), None),
+                    # size=(int(video_width * 0.9), None),
                 )
                 # Set position and timing
                 txt_clip = (
                     txt_clip.with_position(
-                        ("center", video_height - txt_clip.h - margin_bottom)
+                        (
+                            "center",
+                            int(video_height - margin_bottom - txt_clip.h * 1.5 - 20),
+                        )
                     )
                     .with_start(start_time)
                     .with_duration(duration)
@@ -414,17 +435,17 @@ def create_lyric_video(
                     text=lyric["translations"]["en"],
                     font_size=font_size // 2,
                     color=font_color,
-                    font=font_path_en,
+                    font=font_path_en.as_posix(),
                     stroke_color=stroke_color,
                     stroke_width=stroke_width,
-                    method="caption",
+                    method="label",
                     text_align="center",
-                    size=(int(video_width * 0.9), None),
+                    # size=(int(video_width * 0.9), None),
                 )
                 # Set position and timing
                 txt_clip = (
                     txt_clip.with_position(
-                        ("center", video_height - margin_bottom + 10)
+                        ("center", video_height - margin_bottom - txt_clip.h)
                     )
                     .with_start(start_time)
                     .with_duration(duration)
@@ -467,6 +488,9 @@ def create_lyric_video(
         # video = video.subclipped(0, 10)
         # video.preview(3, audio=False)
         # return
+
+        # tmp
+        # video = video.subclipped(0, 3)
 
         # --- Write Output Video File ---
         logger.info("Writing video file '%s'...", output_file)

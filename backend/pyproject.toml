@@ -1,5 +1,5 @@
 [project]
-name = "lyrics-video-creator"
+name = "lyrics_video_creator"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"

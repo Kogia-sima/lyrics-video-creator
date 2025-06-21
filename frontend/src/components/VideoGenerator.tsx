@@ -70,18 +70,18 @@ export const VideoGenerator: React.FC = () => {
     formData.append('image_file', state.backgroundImage);
     formData.append('lyrics', state.lyrics);
     formData.append('font_size', state.settings.fontSize.toString());
-    formData.append('color', state.settings.color);
-    // formData.append('font_family_ja', state.settings.fontFamilyJa); // As per current API spec, these are not included
-    // formData.append('font_family_en', state.settings.fontFamilyEn);
-    // formData.append('outline_color', state.settings.outlineColor);
-    // formData.append('outline_size', state.settings.outlineSize.toString());
-    // formData.append('bottom_margin', state.settings.bottomMargin.toString());
-    // formData.append('enable_fade', state.settings.enableFade.toString());
+    formData.append('font_color', state.settings.color);
+    formData.append('font_name_ja', state.settings.fontFamilyJa); // As per current API spec, these are not included
+    formData.append('font_name_en', state.settings.fontFamilyEn);
+    formData.append('outline_color', state.settings.outlineColor);
+    formData.append('outline_size', state.settings.outlineSize.toString());
+    formData.append('bottom_margin', state.settings.bottomMargin.toString());
+    formData.append('enable_fade', state.settings.enableFade.toString());
 
 
     try {
       const backendURL = 'http://localhost:8000';
-      const response = await fetch(`${backendURL}/generate_video`, {
+      const response = await fetch(`${backendURL}/create_video`, {
         method: 'POST',
         body: formData,
       });
@@ -105,8 +105,6 @@ export const VideoGenerator: React.FC = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-
-      alert('動画のダウンロードが開始されました。');
 
     } catch (error) {
       console.error('動画生成エラー:', error);
