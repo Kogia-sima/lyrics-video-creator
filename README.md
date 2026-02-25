@@ -36,6 +36,8 @@ With the rapid proliferation of modern music generation AIs such as Suno AI and 
 
 This project responds to those needs: with Lyrics Video Creator, you can create videos with lyric subtitles almost automatically in just a few operations. All the user needs to prepare is the music data and the lyrics text. You can use Lyrics Video Creator to make your own music appealing.
 
+See [article](https://qiita.com/Kogia_sima/items/73f7f1baf42b5e849d2f) for details.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
